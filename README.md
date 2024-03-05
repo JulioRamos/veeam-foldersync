@@ -12,8 +12,9 @@ Main features:
 * Synchronization should be performed periodically, using a parameter;
 * File creation/copying/removal operations are logged to a specified file and to the console output;
 * Folder paths, synchronization intervals, and log file paths are provided using the command line arguments.
-<br>
 
+<br>
+<br>
 ## Usage
 ### Arguments
 - `source` (string): Source folder path. Default value is tmp\source
@@ -32,9 +33,9 @@ python syncfolders.py
 python syncfolders.py --source tmp/source --replica tmp/replica --log tmp/syncfolders.log --interval 15
 ```
 
-
-## A review of the code, highlighting potential issues and areas for improvement
 <br>
+<br>
+## A review of the code, highlighting potential issues and areas for improvement
 
 ### Potential Issues:
 
@@ -67,6 +68,8 @@ Implement comprehensive testing to ensure robustness.
 Consider usability enhancements for user feedback and configuration.
 Explore performance optimization techniques if needed.
 
+<br>
+<br>
 ## **Original Task**
 <br>
 Test Task - QA Engineer - Veeam Software
