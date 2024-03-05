@@ -13,8 +13,8 @@ Main features:
 * File creation/copying/removal operations are logged to a specified file and to the console output;
 * Folder paths, synchronization intervals, and log file paths are provided using the command line arguments.
 
-<br>
-<br>
+<br><br>
+
 ## Usage
 ### Arguments
 - `source` (string): Source folder path. Default value is tmp\source
@@ -33,8 +33,8 @@ python syncfolders.py
 python syncfolders.py --source tmp/source --replica tmp/replica --log tmp/syncfolders.log --interval 15
 ```
 
-<br>
-<br>
+<br><br>
+
 ## A review of the code, highlighting potential issues and areas for improvement
 
 ### Potential Issues:
@@ -68,10 +68,12 @@ Implement comprehensive testing to ensure robustness.
 Consider usability enhancements for user feedback and configuration.
 Explore performance optimization techniques if needed.
 
-<br>
-<br>
+<br><br>
+
 ## **Original Task**
+
 <br>
+
 Test Task - QA Engineer - Veeam Software
 
 Write a program that synchronizes two folders: source and replica. The program should maintain a full, identical copy of the source folder in the replica folder. Solve the test task by writing a program in Python.
