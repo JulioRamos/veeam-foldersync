@@ -4,6 +4,7 @@ import os
 import shutil
 import logging
 import hashlib
+import sys
 
 class SyncFolders():
   def __init__(self, source: str, replica: str, logger: logging.Logger, interval: int):
@@ -171,7 +172,7 @@ def main():
   parser = argparse.ArgumentParser(
     prog='syncfolders',
     description='synchronizes two folders: source and replica. It maintains a full, identical copy of the source folder in the replica folder',
-    epilog='sample usage: syncfolders.py --source sourceFolder --replica replicaFolder --interval 10 --log syncfolders.log')
+    epilog='sample usage: syncfolders.py --source sourceFolder --replica replicaFolder --log syncfolders.log --interval 10')
 
   # Collecting the 4 arguments - source folde, replica folder, log path and synchronization interval in seconds. If not defined, use default values
   # Out of Scope: handling possible errors when parsing the arguments
@@ -181,9 +182,10 @@ def main():
   parser.add_argument('-i', '--interval', type=int, help='synchronization interval (in seconds)', default = 5)
   args = parser.parse_args()
     
-  # Setting up a logger for handling our events
+  # Setting up a logger for handling our events, using the stdout and a log file
   logging.basicConfig(filename=args.log, level=logging.INFO, format='%(asctime)s %(message)s')
   logger = logging.getLogger()
+  logger.addHandler(logging.StreamHandler(sys.stdout))
 
   # Will call the method that starts the monitoring of bothe folder, source and replica
   a = SyncFolders(args.source, args.replica, logger, args.interval)
