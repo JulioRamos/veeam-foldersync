@@ -11,8 +11,8 @@ class SyncFolders():
     """
     Initialize the SyncFolders object with source, replica, logger, and interval.
     """
-    self.source = source
-    self.replica = replica
+    self.source = os.path.abspath(source)
+    self.replica = os.path.abspath(replica)
     self.logger = logger
     self.interval = interval
 
@@ -20,16 +20,49 @@ class SyncFolders():
     """
     Start the folder synchronization loop.
     """
+    self._verify_paths()
     self._verify_source()
     self._verify_replica()
-    while True:
-      try:
-        self._compare_folders()
-      except:
-        print('Exiting...')
-      time.sleep(self.interval)
+    self.logger.info("Synchronization started")
+    try:
+      while True:
+        try:
+          self.sync_once()
+        except OSError as e:
+          self.logger.exception(f"Synchronization failed: {e}")
+        time.sleep(self.interval)
+    except KeyboardInterrupt:
+      self.logger.info("Synchronization stopped")
 
-    
+  def sync_once(self):
+    """
+    Perform a single synchronization pass.
+    """
+    self._compare_folders()
+
+  def _verify_paths(self):
+    """
+    Verify source and replica are distinct and not nested inside each other.
+    """
+    if self.source == self.replica:
+      msg = "Source and replica folders must be different"
+      self.logger.warning(msg)
+      raise ValueError(msg)
+
+    try:
+      common = os.path.commonpath([self.source, self.replica])
+    except ValueError:
+      return
+
+    if common == self.source:
+      msg = f"Replica folder cannot be inside the source folder ({self.replica})"
+      self.logger.warning(msg)
+      raise ValueError(msg)
+    if common == self.replica:
+      msg = f"Source folder cannot be inside the replica folder ({self.source})"
+      self.logger.warning(msg)
+      raise ValueError(msg)
+
   def _verify_source(self):
     """
     Verify the existence and type (directory) of the source folder.
@@ -37,11 +70,11 @@ class SyncFolders():
     if not os.path.exists(self.source):
       msg = f"Source folder {self.source} does not exist"
       self.logger.warning(msg)
-      raise Exception(msg)
-    elif not os.path.isdir(self.source):
+      raise FileNotFoundError(msg)
+    if not os.path.isdir(self.source):
       msg = f"{self.source} is not a folder"
       self.logger.warning(msg)
-      raise Exception(msg)
+      raise NotADirectoryError(msg)
 
   def _verify_replica(self):
     """
@@ -53,47 +86,54 @@ class SyncFolders():
   def _compare_folders(self):
     """
     Compare the source and replica folders, copying and syncing files.
-    """    
-    # walk over the source folder
+    """
     for root, dirs, files in os.walk(self.source):
-      # Construct the corresponding path in the replica folder
       replica_full_path = os.path.join(self.replica, os.path.relpath(root, self.source))
 
-      # Create missing directories in the replica folder
       for directory in dirs:
         replica_dir = os.path.join(replica_full_path, directory)
         if not os.path.exists(replica_dir):
           os.makedirs(replica_dir)
           self.logger.info(f"Directory created: {replica_dir}")
 
-      # Handle files in the source folder
       for filename in files:
         source_file = os.path.join(root, filename)
         replica_file = os.path.join(replica_full_path, filename)
 
-        # Check if file exists in replica
         if not os.path.exists(replica_file):
-          # Copy the file from source to replica
           self._copy_file(source_file, replica_file)
         else:
           self._sync_file(source_file, replica_file)
 
-    # Handle files/folders present in the replica folder, but not in the source folder
-    # While removing files/folders present only in the replica folder can be a risky action,
-    for root, dirs, files in os.walk(self.replica):
-      # Construct the corresponding path in the source folder
+    self._remove_extra_replica_items()
+
+  def _remove_extra_replica_items(self):
+    """
+    Remove files and folders present in replica but not in source.
+    Uses bottom-up traversal so parent directories are deleted after their contents.
+    """
+    for root, dirs, files in os.walk(self.replica, topdown=False):
       source_path = os.path.join(self.source, os.path.relpath(root, self.replica))
 
-      # Check for files/folders present in replica but not in source
-      for item in (dirs + files):
-        replica_item = os.path.join(root, item)
-        if not os.path.exists(os.path.join(source_path, item)):
+      for filename in files:
+        replica_item = os.path.join(root, filename)
+        if not os.path.exists(os.path.join(source_path, filename)):
+          self._delete_item(replica_item)
+
+      for directory in dirs:
+        replica_item = os.path.join(root, directory)
+        if not os.path.exists(os.path.join(source_path, directory)):
           self._delete_item(replica_item)
 
   def _delete_item(self, replica_item: str):
     """
-    This is a safe measure for deleting items (only inside a specific path).
+    Delete a file or directory inside the replica folder.
     """
+    if not os.path.abspath(replica_item).startswith(self.replica + os.sep) and os.path.abspath(replica_item) != self.replica:
+      msg = f"Refusing to delete item outside replica folder: {replica_item}"
+      self.logger.warning(msg)
+      raise ValueError(msg)
+
     if os.path.isfile(replica_item):
       try:
         os.remove(replica_item)
@@ -102,94 +142,89 @@ class SyncFolders():
         self.logger.error(f"Failed to remove file: {replica_item} ({e})")
     elif os.path.isdir(replica_item):
       try:
-          shutil.rmtree(replica_item)  # shutil.rmtree for recursive deletion
-          self.logger.info(f"Directory removed: {replica_item}")
+        shutil.rmtree(replica_item)
+        self.logger.info(f"Directory removed: {replica_item}")
       except OSError as e:
-          self.logger.error(f"Failed to remove directory: {replica_item} ({e})")
+        self.logger.error(f"Failed to remove directory: {replica_item} ({e})")
     else:
       msg = f"Item {replica_item} is not a folder neither a file"
       self.logger.warning(msg)
-      raise Exception(msg)
-        
+      raise FileNotFoundError(msg)
+
   def _create_folder(self, folder: str):
     """
     Create a folder if it doesn't exist.
     """
     if not os.path.exists(folder):
-      os.mkdir(folder)
+      os.makedirs(folder)
       self.logger.info(f"{folder} folder was created")
 
   def _copy_file(self, source_file: str, replica_file: str):
-      """
-      Copy a file from source to replica, creating parent directories if needed.
-      """
-      if not os.path.exists(os.path.dirname(replica_file)):
-        os.makedirs(os.path.dirname(replica_file))
-      
-      shutil.copy2(source_file, replica_file)
-      self.logger.info(f"{source_file} file copied to {replica_file}")
+    """
+    Copy a file from source to replica, creating parent directories if needed.
+    """
+    parent = os.path.dirname(replica_file)
+    if parent and not os.path.exists(parent):
+      os.makedirs(parent)
+
+    shutil.copy2(source_file, replica_file)
+    self.logger.info(f"{source_file} file copied to {replica_file}")
 
   def _sync_file(self, source_file: str, replica_file: str):
-      """
-      Compare and potentially copy a file based on file hashes.
-      TBD: add other forms of comparison like file size, timestamps and content
-      """
-      if (self._hashfile(source_file) != self._hashfile(replica_file)):
-        self._copy_file(source_file, replica_file)
+    """
+    Compare and copy a file when size, mtime, or content differs.
+    """
+    if self._files_differ(source_file, replica_file):
+      self._copy_file(source_file, replica_file)
+
+  def _files_differ(self, source_file: str, replica_file: str) -> bool:
+    """
+    Return True when files differ by metadata or content.
+    """
+    source_stat = os.stat(source_file)
+    replica_stat = os.stat(replica_file)
+
+    if source_stat.st_size != replica_stat.st_size:
+      return True
+    if source_stat.st_mtime_ns != replica_stat.st_mtime_ns:
+      return True
+
+    return self._hashfile(source_file) != self._hashfile(replica_file)
 
   def _hashfile(self, file: str):
-      """
-      Calculate the SHA-256 hash of a file.
-      source: https://www.geeksforgeeks.org/hashlib-module-in-python/
-      """      
-      # A arbitrary (but fixed) buffer size
-      # 65536 = 65536 bytes = 64 kilobytes
-      BUF_SIZE = 65536
-  
-      # Initializing the sha256() method
-      sha256 = hashlib.sha256()
-  
-      with open(file, 'rb') as f:
-        while True:
-          # reading data = BUF_SIZE from the 
-          # file and saving it in a variable
-          data = f.read(BUF_SIZE)
+    """
+    Calculate the SHA-256 hash of a file.
+    """
+    BUF_SIZE = 65536
+    sha256 = hashlib.sha256()
 
-          # True if eof = 1
-          if not data:
-              break
+    with open(file, 'rb') as f:
+      while True:
+        data = f.read(BUF_SIZE)
+        if not data:
+          break
+        sha256.update(data)
 
-          # Passing that data to that sh256 hash 
-          # function (updating the function with that data)
-          sha256.update(data)
-  
-      # sha256.hexdigest() hashes all the input data passed to the sha256() via sha256.update()
-      # Acts as a finalize method, after which all the input data gets hashed hexdigest() hashes the data, and returns the output in hexadecimal format
-      return sha256.hexdigest()
+    return sha256.hexdigest()
 
 def main():
-  # Instantiate the parser
   parser = argparse.ArgumentParser(
     prog='syncfolders',
     description='synchronizes two folders: source and replica. It maintains a full, identical copy of the source folder in the replica folder',
     epilog='sample usage: syncfolders.py --source sourceFolder --replica replicaFolder --log syncfolders.log --interval 10')
 
-  # Collecting the 4 arguments - source folde, replica folder, log path and synchronization interval in seconds. If not defined, use default values
-  # Out of Scope: handling possible errors when parsing the arguments
-  parser.add_argument('-s', '--source', type=str, help='source folder path', default = 'tmp/source')
-  parser.add_argument('-r', '--replica', type=str, help='replica folder path', default = 'tmp/replica')
-  parser.add_argument('-l', '--log', type=str, help='log file path', default = 'tmp/syncfolders.log')
-  parser.add_argument('-i', '--interval', type=int, help='synchronization interval (in seconds)', default = 5)
+  parser.add_argument('-s', '--source', type=str, help='source folder path', default='tmp/source')
+  parser.add_argument('-r', '--replica', type=str, help='replica folder path', default='tmp/replica')
+  parser.add_argument('-l', '--log', type=str, help='log file path', default='tmp/syncfolders.log')
+  parser.add_argument('-i', '--interval', type=int, help='synchronization interval (in seconds)', default=5)
   args = parser.parse_args()
-    
-  # Setting up a logger for handling our events, using the stdout and a log file
+
   logging.basicConfig(filename=args.log, level=logging.INFO, format='%(asctime)s %(message)s')
   logger = logging.getLogger()
   logger.addHandler(logging.StreamHandler(sys.stdout))
 
-  # Will call the method that starts the monitoring of bothe folder, source and replica
-  a = SyncFolders(args.source, args.replica, logger, args.interval)
-  a.start_syncing()  
+  sync = SyncFolders(args.source, args.replica, logger, args.interval)
+  sync.start_syncing()
 
 if __name__ == "__main__":
   main()
